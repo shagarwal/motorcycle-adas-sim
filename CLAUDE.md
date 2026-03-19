@@ -1,92 +1,98 @@
 # Motorcycle ADAS Sim — Claude Instructions
 
-This repo contains a motorcycle ADAS braking scenario rendered with Blender.
-If asked to continue working on this project, here is everything you need to know.
+Standalone Blender-based motorcycle ADAS braking scenario. **No Isaac Sim required.**
+Working directory: `/mnt/c/Users/shaur/Documents/Code_Repository/3d_sim_creator/`
+GitHub: https://github.com/shagarwal/motorcycle-adas-sim
 
-## What this does
+## Files
 
-`motorcycle_sim_blender.py` runs a Python physics simulation (no external deps)
-then calls Blender to render a 3D video. `blender_scene.py` is the Blender
-Python scene script called internally — do not run it directly.
+| File | Purpose |
+|---|---|
+| `motorcycle_sim_blender.py` | Orchestrator: runs physics, calls Blender |
+| `blender_scene.py` | Blender Python scene builder — called internally, do not run directly |
+| `motorcycle_sim_3d.py` | Alternative pyrender renderer (no Blender required) |
 
-## Setup on a new machine (WSL2 on Windows)
+## Setup (WSL2 on Windows)
 
-### 1. Install Blender
 ```bash
-mkdir -p /mnt/c/blender
-curl -L "https://www.blender.org/download/release/Blender4.3/blender-4.3.2-windows-arm64.zip" \
-     -o /tmp/blender.zip
-unzip /tmp/blender.zip -d /mnt/c/blender/
-# Verify:
-/mnt/c/blender/blender-4.3.2-windows-arm64/blender.exe --version
-```
-For x86_64 Windows, replace `arm64` with `x64` in the URL and path.
+# ARM64 Windows:
+winget install -e --id BlenderFoundation.Blender
+# OR manual install at /mnt/c/blender/blender-4.3.2-windows-arm64/blender.exe
 
-### 2. Clone and run
-```bash
-git clone https://github.com/shagarwal/motorcycle-adas-sim.git
-cd motorcycle-adas-sim
-python3 motorcycle_sim_blender.py --samples 16   # preview
+# x86_64 Windows: download from blender.org, update BLENDER_EXE in motorcycle_sim_blender.py
 ```
 
-### 3. Update BLENDER_EXE if needed
-The `BLENDER_EXE` constant near the top of `motorcycle_sim_blender.py`
-must point to the actual blender executable.
+## Running
 
-## How it works
+```bash
+cd /mnt/c/Users/shaur/Documents/Code_Repository/3d_sim_creator/
 
-- `motorcycle_sim_blender.py` runs physics (Euler integration, inverted-pendulum
-  lean dynamics, PD controller) and exports `/tmp/moto_physics.json`.
-- It then calls `blender.exe --background --python blender_scene.py -- json output.mp4 samples`.
-- `blender_scene.py` reads the JSON and creates the 3D scene + animation + render.
-- Blender is a Windows process running via WSL2 interop. It reads the physics JSON
-  via a UNC path (`\\wsl.localhost\Ubuntu\tmp\...`).
-- No Python packages are needed — only standard library.
+python3 motorcycle_sim_blender.py --samples 8    # fast sanity check ~10s
+python3 motorcycle_sim_blender.py --samples 16   # quick preview ~10-30 min
+python3 motorcycle_sim_blender.py --samples 48   # default quality ~30-90 min
+python3 motorcycle_sim_blender.py --samples 128  # high quality ~2-6 hr
+python3 motorcycle_sim_blender.py --no-render    # physics check only (writes JSON)
+```
 
-## Key physics parameters
+Output: `C:\Users\shaur\motorcycle_blender.mp4` (override with `--output`)
+
+### Quick single-frame preview (for iterating on visuals)
+```bash
+# First generate physics JSON (once per session):
+python3 motorcycle_sim_blender.py --no-render
+
+# Then render a single frame (fast, ~10s):
+TS=$(date +%H%M%S) && WIN_OUT="C:\\Users\\shaur\\moto_preview_${TS}.png" && \
+/mnt/c/blender/blender-4.3.2-windows-arm64/blender.exe --background \
+  --python "C:\\Users\\shaur\\Documents\\Code_Repository\\3d_sim_creator\\blender_scene.py" \
+  -- "\\\\wsl.localhost\\Ubuntu\\tmp\\moto_physics.json" "$WIN_OUT" 8 120
+```
+
+## Current Physics Parameters
 
 | Constant | Value | What it controls |
 |---|---|---|
-| `V_CRUISE` | 12 m/s | Cruise speed |
-| `CAR_BRAKE_TIME` | 3.0 s | When lead car brakes |
-| `CAR_BRAKE_ACCEL` | -7.0 m/s² | Car braking deceleration |
-| `MOTO_REACT_S` | 1.0 s | Motorcycle ADAS reaction delay |
-| `MOTO_BRAKE_ACCEL` | -6.5 m/s² | Motorcycle braking deceleration |
-| `WEAVE_AMP` | 0.8 m | Lane weave amplitude (drives visible lean) |
-| `KP` / `KD` | 3500 / 500 | Lean PD controller gains |
+| `V_CRUISE` | 12.0 m/s | Cruise speed (~43 km/h) |
+| `CAR_BRAKE_TIME` | 3.0 s | When lead car starts braking |
+| `CAR_BRAKE_ACCEL` | -9.0 m/s² | Car hard-ABS braking |
+| `MOTO_REACT_S` | 1.0 s | ADAS reaction delay |
+| `MOTO_BRAKE_ACCEL` | -4.6 m/s² | Motorcycle braking |
+| `SIM_DURATION` | 12.0 s | Total sim length |
 
-## Render quality guide
+Final gap at stop: ~0.32 m — safe ✓. Motorcycle drives **straight** (no lateral weave).
 
-```bash
-python3 motorcycle_sim_blender.py --samples 16    # ~10-30 min preview
-python3 motorcycle_sim_blender.py --samples 48    # ~30-90 min default
-python3 motorcycle_sim_blender.py --samples 128   # ~2-6 hr high quality
-python3 motorcycle_sim_blender.py --no-render     # physics check only
-```
+## Scene Description
 
-Output goes to `C:\Users\<username>\motorcycle_blender.mp4` by default.
-Override with `--output C:\path\to\out.mp4`.
+- **Motorcycle**: Black angular sport bike (box geometry), humanoid rider in dark suit + light-grey helmet
+- **Car**: Camry-inspired silver sedan with corner-mounted tail lights (L-shaped, on quarter panels)
+- **Road**: Straight along +X, 11 m wide, dashed centre line, grass shoulders. Both vehicles in right lane (Y offset +2.5 m)
+- **Camera**: 8 m behind / 1.5 m right / 2.8 m up in motorcycle local frame, follows motorcycle
 
-## Blender scene notes
+## Blender Coordinate System
 
-- Coordinate system: Z-up, vehicles face +X, Y = lateral
-- Motorcycle: blue sport bike with orange-suit rider; origin = rear axle ground level
-- Car: silver SUV; `car.location.x = lead_x - 2.08` (centres car so front bumper = lead_x)
-- Lean: rotation_euler X-axis in degrees, positive = lean right
-- Camera: 8 m behind / 2.5 m right / 2.8 m up in motorcycle local frame, Track-To constraint
-- Road: straight, 11 m wide, runs +X from x=-30 to x=500
-- Rendering: Cycles CPU, OIDN denoising, Filmic colour, FFMPEG H264 MP4 output
+- Z-up, vehicles face **+X**, Y = lateral
+- Car origin under rear axle; `car.location.x = lead_x - 2.08` (front bumper = lead_x)
+- Motorcycle origin: rear axle at ground level
+- Tail lights named `BrakeLt_*` — brake-light switcher keys on this prefix
 
-## Common issues
+## Rendering
 
-**Blender can't find physics JSON:**
-Check the UNC path printed in `[Blender] Launching render...` output.
-The distro name in `\\wsl.localhost\<distro>\tmp\...` must match your WSL distro.
-The `to_wsl_unc()` function reads this from `/etc/os-release NAME=`.
+- **Engine**: Cycles CPU + OIDN denoising
+- **Color**: AgX, look='None', exposure=-1.2
+- **Sun energy**: 0.7, sky strength 0.18
+- **Output**: PNG for preview, FFMPEG H264 MP4 for full render
+- **Blender path**: `/mnt/c/blender/blender-4.3.2-windows-arm64/blender.exe`
+- **Physics JSON**: `/tmp/moto_physics.json` (WSL), read via `\\wsl.localhost\Ubuntu\tmp\moto_physics.json`
 
-**Wrong Blender path:**
-Update `BLENDER_EXE` in `motorcycle_sim_blender.py`.
+## WSL Path Helpers (in motorcycle_sim_blender.py)
 
-**No output file produced:**
-Run `--no-render` first and check physics prints `← safe ✓`.
-Then try `--samples 8` for the fastest possible test render.
+- `to_win_path("/mnt/c/foo")` → `"C:\\foo"` (for script path passed to blender.exe)
+- `to_wsl_unc("/tmp/foo")` → `"\\\\wsl.localhost\\Ubuntu\\tmp\\foo"` (for JSON read by Windows Blender)
+
+## Common Issues
+
+**Blender can't find physics JSON**: Check that `\\wsl.localhost\Ubuntu` uses your actual distro name (read from `/etc/os-release NAME=`).
+
+**Wrong Blender path**: Update `BLENDER_EXE` constant in `motorcycle_sim_blender.py`.
+
+**No output / black render**: Run `--no-render` first to verify physics, then try `--samples 8` for a quick test.
